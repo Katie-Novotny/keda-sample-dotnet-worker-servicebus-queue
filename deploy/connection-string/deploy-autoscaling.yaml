@@ -7,6 +7,7 @@ spec:
   - parameter: connection
     name: secrets-order-management
     key: servicebus-order-management-connectionstring
+
 ---
 apiVersion: v1
 kind: Secret
@@ -15,8 +16,10 @@ metadata:
   labels:
     app: order-processor
 data:
-  servicebus-order-management-connectionstring: <base64-encoded-connection-string>
+  servicebus-order-management-connectionstring: ""
+
 ---
+
 apiVersion: keda.sh/v1alpha1 
 kind: ScaledObject
 metadata:
@@ -34,5 +37,6 @@ spec:
     metadata:
       queueName: orders
       messageCount: '50'
+      # connectionFromEnv: KEDA_SERVICEBUS_CONNECTIONSTRING
     authenticationRef:
       name: trigger-auth-service-bus-orders

@@ -1,20 +1,20 @@
 apiVersion: aadpodidentity.k8s.io/v1
 kind: AzureIdentity
 metadata:
-  name: <app-identity-name>
+  name: keda-virtual-node
   annotations:
     aadpodidentity.k8s.io/Behavior: namespaced
 spec:
   type: 0 # 0 means User-assigned MSI
-  resourceID: <app-identity-resource-id>
-  clientID: <app-identity-id>
+  resourceID: "/subscriptions/0005c093-d9ad-44b4-abe8-f507848419ca/resourcegroups/keda-virtual-node/providers/Microsoft.ManagedIdentity/userAssignedIdentities/keda-virtual-node"
+  clientID: "5fab1b2f-ccc4-4595-9109-455ddac58bfe"
 ---
 apiVersion: aadpodidentity.k8s.io/v1
 kind: AzureIdentityBinding
 metadata:
-  name: <app-identity-name>-binding
+  name: keda-virtual-node-binding
 spec:
-  azureIdentity: <app-identity-name>
+  azureIdentity: keda-virtual-node
   selector: order-processor
 ---
 apiVersion: apps/v1
@@ -23,6 +23,7 @@ metadata:
   name: order-processor
   labels:
     app: order-processor
+    aadpodidbinding: order-processor
 spec:
   selector:
     matchLabels:
@@ -40,8 +41,8 @@ spec:
         - name: KEDA_SERVICEBUS_AUTH_MODE
           value: ManagedIdentity
         - name: KEDA_SERVICEBUS_HOST_NAME
-          value: <namespace-name>.servicebus.windows.net
+          value: keda-virtual-node.servicebus.windows.net
         - name: KEDA_SERVICEBUS_QUEUE_NAME
           value: orders
         - name: KEDA_SERVICEBUS_IDENTITY_USERASSIGNEDID
-          value: <app-identity-id>
+          value: 5fab1b2f-ccc4-4595-9109-455ddac58bfe

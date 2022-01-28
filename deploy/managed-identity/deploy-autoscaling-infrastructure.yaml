@@ -1,16 +1,16 @@
 apiVersion: aadpodidentity.k8s.io/v1
 kind: AzureIdentity
 metadata:
-  name: <autoscaler-identity-name>
+  name: autoscaler-identity
 spec:
   type: 0 # 0 means User-assigned MSI
-  resourceID: <autoscaler-identity-resource-id>
-  clientID: <autoscaler-identity-id>
+  resourceID: 49a6bb91-121f-42a0-933c-f6ee51d97619
+  clientID: "/subscriptions/0005c093-d9ad-44b4-abe8-f507848419ca/resourcegroups/keda-virtual-node/providers/Microsoft.ManagedIdentity/userAssignedIdentities/autoscaler-identity"
 ---
 apiVersion: aadpodidentity.k8s.io/v1
 kind: AzureIdentityBinding
 metadata:
-  name: <autoscaler-identity-name>-binding
+  name: autoscaler-identity-binding
 spec:
-  azureIdentity: <autoscaler-identity-name>
+  azureIdentity: autoscaler-identity
   selector: app-autoscaler
