@@ -18,7 +18,7 @@ spec:
   triggers:
   - type: azure-servicebus
     metadata:
-      namespace: <namespace-name>
+      namespace: keda-virtual-node
       queueName: orders
       messageCount: '5'
     authenticationRef:
