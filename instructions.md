@@ -1,214 +1,111 @@
 
-vnet_name=newVnet
-subnet_name=newAKSSubnet
+## Pre-requisites
+
+- Azure CLI
+- Azure Subscription
+- .NET Core 3.0
+- powershell
+- helm
+
+## Setup
+
+### creating AKS clsuter with virtual node add on
+project_name=vn-take4
+location=eastus
+aks group create -n $project_name -l $location
+az configure --defaults location=$location group=$project_name
+
+acr_name=$project_name
+az acr create --name $acr_name --sku Basic
+
+vnet_name=$project_name
+aci_subnet_name=aciSubnet
 az network vnet create \
     --name $vnet_name \
     --address-prefixes 10.0.0.0/8 \
-    --subnet-name $subnet_name \
+    --subnet-name $aci_subnet_name \
     --subnet-prefix 10.240.0.0/16
 
-virtual_subnet_name=newVirtualNodeSubnet
+virtual_subnet_name=virtualSubnet
 az network vnet subnet create \
     --vnet-name $vnet_name \
     --name $virtual_subnet_name \
     --address-prefixes 10.241.0.0/16
 
+aci_subnet_id=$(az network vnet subnet show --vnet-name $vnet_name --name $aci_subnet_name --query id -o tsv)
 
-subnet_id=$(az network vnet subnet show --vnet-name $vnet_name --name $subnet_name --query id -o tsv)
-aks_cluster_name=vn-take3
-acr_name=kedavirtualnode
+virtual_subnet_id=$(az network vnet subnet show --vnet-name $vnet_name --name $virtual_subnet_name --query id -o tsv)
 
-az identity create  -n vn-take3-user
-
+aks_cluster_name=$project_name
 az aks create \
           --name $aks_cluster_name \
           --node-count 1 \
-          --assign-identity $user_resource_id \
           --attach-acr $acr_name \
           --network-plugin azure \
-          --vnet-subnet-id $subnet_id \
-          --enable-addons monitoring \
-          --generate-ssh-keys \
-          --enable-cluster-autoscaler \
-          --min-count 1 \
-          --max-count 3
+          --aci-subnet-name $virtual_subnet_name \
+          --vnet-subnet-id $aci_subnet_id \
+          --enable-addons virtual-node \
+          --generate-ssh-keys
+az aks install-cli
 
-az aks addon enable \
-    --name $aks_cluster_name \
-    --addon virtual-node \
-    --subnet-name $virtual_subnet_name
+### Install KEDA
+helm repo update
+helm repo add kedacore https://kedacore.github.io/charts
+kubectl create namespace keda
+helm install keda kedacore/keda --namespace keda
 
-az aks disable-addons \
-    --name $aks_cluster_name \
-    --addons virtual-node 
+### Creating a new Azure Service Bus namespace & queue
 
-az aks nodepool list --cluster-name $aks_cluster_name
+We will start by creating a new Azure Service Bus namespace:
 
 
-
-vnetId=$(az network vnet show --name newVnet --query id -o tsv)
-
-az role assignment create --assignee $principalId --scope $vnetId --role "Network Contributor"
-
-az aks addon show --addon virtual-node  --name $aks_cluster_name
-
-az aks addon update --addon virtual-node --name $aks_cluster_name --subnet-name $virtual_subnet_name
-                  
-project_name=keda-virtual-node
+```cli
 servicebus_namespace=$project_name
 az servicebus namespace create --name $servicebus_namespace --sku basic
+```
+keda_connection_string=$(az servicebus namespace authorization-rule keys list  --namespace-name $servicebus_namespace --name RootManageSharedAccessKey --query primaryConnectionString -o tsv)
+
 queue_name=orders
 az servicebus queue create --namespace-name $servicebus_namespace --name $queue_name
 
-az servicebus queue authorization-rule create --namespace-name $servicebus_namespace --queue-name $queue_name --name order-consumer --rights Listen
+authorization_rule_name=order-consumer
+az servicebus queue authorization-rule create --namespace-name $servicebus_namespace --queue-name $queue_name --name $authorization_rule_name --rights Listen
 
-connection_string=$(az servicebus queue authorization-rule keys list --namespace-name $servicebus_namespace --queue-name $queue_name --name order-consumer --query primaryConnectionString -o tsv)
+queue_connection_string=$(az servicebus queue authorization-rule keys list --namespace-name $servicebus_namespace --queue-name $queue_name --name $authorization_rule_name --query primaryConnectionString -o tsv)
 
-export connection_string_base64=$(echo -n $connection_string | base64   | tr -d '\n')
+demo_app_namespace=keda-dotnet-sample
+kubectl create namespace $demo_app_namespace
 
-kubectl create namespace keda-dotnet-sample
+keda_servicebus_secret=keda-servicebus-secret
+kubectl create secret generic $keda_servicebus_secret --from-literal=keda-connection-string=$keda_connection_string -n $demo_app_namespace
 
-kubectl create secret generic secrets-order-consumer --from-literal=servicebus-connectionstring=$connection_string -n keda-dotnet-sample
+kubectl create secret generic order-consumer-secret --from-literal=queue-connection-string=$queue_connection_string -n $demo_app_namespace
 
-kubectl apply -f deploy/connection-string/deploy-app.yaml --namespace keda-dotnet-sample
-kubectl delete -f deploy/connection-string/deploy-app.yaml --namespace keda-dotnet-sample
+### deploying demo app
+kubectl apply -f deploy/deploy-app.yaml --namespace $demo_app_namespace
 
-Install KEDA
-helm repo update
-helm repo add kedacore https://kedacore.github.io/charts
-kubectl create namespace keda
-helm install keda kedacore/keda --namespace keda
+kubectl get pod -n $demo_app_namespace -o wide
 
-kubectl delete -f deploy/connection-string/deploy-autoscaling.yaml --namespace keda-dotnet-sample
-kubectl apply -f deploy/connection-string/deploy-autoscaling.yaml --namespace keda-dotnet-sample
+kubectl apply -f deploy/deploy-autoscaling.yaml --namespace $demo_app_namespace
 
-kubectl describe scaledobject order-processor-scaler -n keda-dotnet-sample
+### deploying Keda scaledobject
 
-kubectl get deployments --namespace keda-dotnet-sample -o wide
+kubectl describe scaledobject order-processor-scaler -n $demo_app_namespace
 
-az servicebus queue authorization-rule create --namespace-name $servicebus_namespace --queue-name $queue_name --name keda-monitor-send --rights Listen Send
+kubectl get deployments --namespace $demo_app_namespace -o wide
 
-connection_string=$(az servicebus queue authorization-rule keys list --namespace-name $servicebus_namespace --queue-name $queue_name --name keda-monitor-send --query primaryConnectionString -o tsv)
+### setting up and running order generator
+monitor_authorization_rule_name=keda-monitor-send
+az servicebus queue authorization-rule create --namespace-name $servicebus_namespace --queue-name $queue_name --name $monitor_authorization_rule_name --rights Listen Send
 
+MONITOR_CONNECTION_STRING=$(az servicebus queue authorization-rule keys list --namespace-name $servicebus_namespace --queue-name $queue_name --name $monitor_authorization_rule_name --query primaryConnectionString -o tsv)
 
+echo $MONITOR_CONNECTION_STRING
 
-echo -n $connection_string | base64   | tr -d '\n'
+In "src/Keda.Samples.Dotnet.OrderGenerator/Program.cs", replace  "MONITOR_CONNECTION_STRING" with the above value
 
-echo -n 'Endpoint=sb://keda-virtual-node.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;
+in a powershell terminal, run: dotnet run --project .\src\Keda.Samples.Dotnet.OrderGenerator\Keda.Samples.Dotnet.OrderGenerator.csproj
 
-kubectl create secret generic secrets-order-autoscaler --from-literal=servicebus=$connection_string -n keda-dotnet-sample
-
-
-update "src/Keda.Samples.Dotnet.OrderGenerator/Program.cs" with "queue name" and "connection string"
-
-in powershell terminal, run: dotnet run --project .\src\Keda.Samples.Dotnet.OrderGenerator\Keda.Samples.Dotnet.OrderGenerator.csproj
-
-kubectl get secret secrets-order-consumer -o jsonpath='{.data}'
-
-
-identity_name=$project_name
-az identity create --name $identity_name 
-
-app_identity_clientid=$(az identity show --name $identity_name --query clientId -o tsv)
-app_identity_resourceid=$(az identity show --name $identity_name --query Id -o tsv)
-subscription_id=$(az account show --query id -o tsv)
-scope=/subscriptions/$subscription_id/resourceGroups/keda-virtual-node/providers/Microsoft.ServiceBus/namespaces/$servicebus_namespace
-az role assignment create --role 'Azure Service Bus Data Receiver' --assignee $app_identity_id --scope $scope
-
-autoscaler_identity=autoscaler-identity
-az identity create --name $autoscaler_identity
-autoscaler_identity_clientid=$(az identity show --name $autoscaler_identity --query clientId -o tsv)
-
-kubectl apply -f https://raw.githubusercontent.com/Azure/aad-pod-identity/v1.8.4/deploy/infra/deployment-rbac.yaml
-
-kubectl apply -f deploy/managed-identity/deploy-app-with-managed-identity.yaml --namespace keda-dotnet-sample
-kubectl delete -f deploy/managed-identity/deploy-app-with-managed-identity.yaml --namespace keda-dotnet-sample
-
-kubectl apply -f deploy/managed-identity/deploy-autoscaling-infrastructure.yaml --namespace keda-dotnet-sample
-
-helm install keda kedacore/keda --set podIdentity.activeDirectory.identity=app-autoscaler --namespace keda
-
-az role assignment create --role 'Azure Service Bus Data Owner' --assignee <scaler-identity-id> --scope /subscriptions/<subscription-id>/resourceGroups/<resource-group-name>/providers/Microsoft.ServiceBus/namespaces/<namespace-name>
-
-az role assignment create --role 'Azure Service Bus Data Owner' --assignee $autoscaler_identity_clientid --scope $scope
-
-kubectl apply -f deploy/managed-identity/deploy-app-autoscaling.yaml --namespace keda-dotnet-sample
-
-kubectl delete -f deploy/managed-identity/deploy-app-autoscaling.yaml --namespace keda-dotnet-sample
-
-kubectl get po -n keda-dotnet-sample
-
-kubectl logs order-processor-7b84ff997-qsd75 -n keda-dotnet-sample -f
-
-k logs mic-68c7ccd865-6s6bm
-
-k logs nmi-ctb2m
-
-
-# Output the OIDC issuer URL
-
-az feature register --name EnableOIDCIssuerPreview --namespace Microsoft.ContainerService
-# Install the aks-preview extension
-az extension add --name aks-preview
-
-# Update the extension to make sure you have the latest version installed
-az extension update --name aks-preview
-
-az aks update -n $aks_cluster_name --enable-oidc-issuer
-
-az aks show  --name $aks_cluster_name --query "oidcIssuerProfile.issuerUrl" -o tsv
-
-export AZURE_TENANT_ID="$(az account show -s $subscription_id --query tenantId -otsv)"
-
-helm repo add azure-workload-identity https://azure.github.io/azure-workload-identity/charts
-helm repo update
-helm install workload-identity-webhook azure-workload-identity/workload-identity-webhook \
-   --namespace azure-workload-identity-system \
-   --create-namespace \
-   --set azureTenantID="${AZURE_TENANT_ID}"
-
-
-curl -L https://github.com/a8m/envsubst/releases/download/v1.2.0/envsubst-`uname -s`-`uname -m` -o envsubst
-chmod +x envsubst
-sudo mv envsubst /usr/local/bin
-
-curl -s https://github.com/Azure/azure-workload-identity/releases/download/v0.7.0/azure-wi-webhook.yaml | envsubst | kubectl apply -f -
-
-cat azure-wi-webhook.yaml | envsubst | kubectl apply -f -
-
-go install github.com/Azure/azure-workload-identity/cmd/azwi@v0.7.0
-
-
-## after creating cluster in Azure Portal
-
-az aks get-credentials --resource-group vn-take2 --name vn-take2
-connection_string=$(az servicebus queue authorization-rule keys list --namespace-name $servicebus_namespace --queue-name $queue_name --name order-consumer --query primaryConnectionString -o tsv)
-kubectl create namespace keda-dotnet-sample
-
-kubectl create secret generic secrets-order-consumer --from-literal=servicebus-connectionstring=$connection_string -n keda-dotnet-sample
-
-kubectl apply -f deploy/connection-string/deploy-app.yaml --namespace keda-dotnet-sample
-kubectl delete -f deploy/connection-string/deploy-app.yaml --namespace keda-dotnet-sample
-
-Install KEDA
-helm repo update
-helm repo add kedacore https://kedacore.github.io/charts
-kubectl create namespace keda
-helm install keda kedacore/keda --namespace keda
-
-kubectl delete -f deploy/connection-string/deploy-autoscaling.yaml --namespace keda-dotnet-sample
-kubectl apply -f deploy/connection-string/deploy-autoscaling.yaml --namespace keda-dotnet-sample
-
-kubectl describe scaledobject order-processor-scaler -n keda-dotnet-sample
-
-kubectl get deployments --namespace keda-dotnet-sample -o wide
-
-watch kubectl get pods --namespace keda-dotnet-sample -o wide
-
-update "src/Keda.Samples.Dotnet.OrderGenerator/Program.cs" with "queue name" and "connection string"
-
-in powershell terminal, run: dotnet run --project .\src\Keda.Samples.Dotnet.OrderGenerator\Keda.Samples.Dotnet.OrderGenerator.csproj
-
-
+In the bash shell: run "watch kubectl get pod -n $demo_app_namespace -o wide"
 
 
