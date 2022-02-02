@@ -5,18 +5,8 @@ metadata:
 spec:
   secretTargetRef:
   - parameter: connection
-    name: secrets-order-management
-    key: servicebus-order-management-connectionstring
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: secrets-order-management
-  labels:
-    app: order-processor
-data:
-  servicebus-order-management-connectionstring: ""
+    name: keda-servicebus-secret
+    key: keda-connection-string
 
 ---
 
