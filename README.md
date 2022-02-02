@@ -139,7 +139,7 @@ echo $MONITOR_CONNECTION_STRING
 
 ```
 
-* In `src/Keda.Samples.Dotnet.OrderGenerator/Program.cs`, replace  `"MONITOR_CONNECTION_STRING"` with the above value
+* In `src/Keda.Samples.Dotnet.OrderGenerator/Program.cs`, replace  `MONITOR_CONNECTION_STRING` with the above value
 
 * in a powershell terminal, run: `dotnet run --project .\src\Keda.Samples.Dotnet.OrderGenerator\Keda.Samples.Dotnet.OrderGenerator.csproj`
 
