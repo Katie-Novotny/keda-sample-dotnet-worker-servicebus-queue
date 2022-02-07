@@ -54,6 +54,7 @@ az aks create \
           --vnet-subnet-id $aci_subnet_id \
           --enable-addons virtual-node \
           --generate-ssh-keys
+Note: I used a system assigned identity
 az aks install-cli
 
 ```
