@@ -13,6 +13,7 @@
 ### Creating AKS clsuter with virtual node add on
 
 * Execute the following
+* Open VS Code Run as Admin
 
 ```cli
 
