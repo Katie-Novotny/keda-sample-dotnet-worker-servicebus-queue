@@ -18,7 +18,7 @@
 
 project_name=vn-take4
 location=eastus
-aks group create -n $project_name -l $location
+az group create -n $project_name -l $location
 az configure --defaults location=$location group=$project_name
 
 acr_name=$project_name
