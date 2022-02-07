@@ -21,6 +21,8 @@ location=eastus
 az group create -n $project_name -l $location
 az configure --defaults location=$location group=$project_name
 
+--Note: acr_name cannot have a hyphen
+--KMN: changed acr_name to vntake4
 acr_name=$project_name
 az acr create --name $acr_name --sku Basic
 
