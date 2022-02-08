@@ -72,6 +72,7 @@ helm repo add stable https://charts.helm.sh/stable
 
 helm repo update
 helm repo add kedacore https://kedacore.github.io/charts
+az aks get-credentials -n $project_name
 kubectl create namespace keda
 helm install keda kedacore/keda --namespace keda
 
