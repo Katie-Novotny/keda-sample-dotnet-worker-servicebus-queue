@@ -24,7 +24,7 @@ az configure --defaults location=$location group=$project_name
 
 --Note: acr_name cannot have a hyphen
 --KMN: changed acr_name to vntake4
-acr_name=$project_name
+acr_name=vnet4
 az acr create --name $acr_name --sku Basic
 
 vnet_name=$project_name
