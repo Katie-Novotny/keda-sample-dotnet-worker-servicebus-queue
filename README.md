@@ -117,6 +117,8 @@ kubectl apply -f deploy/deploy-app.yaml --namespace $demo_app_namespace
 
 kubectl get pod -n $demo_app_namespace -o wide
 
+--Wait for the pod to be in Running state before proceeding to the next step.
+
 kubectl apply -f deploy/deploy-autoscaling.yaml --namespace $demo_app_namespace
 
 ```
