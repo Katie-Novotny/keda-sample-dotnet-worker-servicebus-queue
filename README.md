@@ -68,6 +68,7 @@ az aks install-cli
 curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
 chmod 700 get_helm.sh
 ./get_helm.sh
+helm repo add stable https://charts.helm.sh/stable
 
 helm repo update
 helm repo add kedacore https://kedacore.github.io/charts
